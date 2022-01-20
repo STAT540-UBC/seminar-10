@@ -1,0 +1,2 @@
+# Feedback and Proposed Changes
+* Rewrote Seminar using a different data example. The previous version included a global normalization among cancer and normal samples that I would strongly advocate against. -Keegan

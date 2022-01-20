@@ -1,0 +1,407 @@
+---
+output:
+  github_document
+---
+
+# STAT 540 - Seminar 10: DNA methylation analysis with Illumina's Infinium DNA microarrays  
+
+## Acknowledgements
+
+This seminar was developed by Keegan Korthauer, and is modeled after the Bioconductor Workflow ["**A cross-package Bioconductor workflow for analysing methylation array data**"](https://bioconductor.org/packages/devel/workflows/vignettes/methylationArrayAnalysis/inst/doc/methylationArrayAnalysis.html) by Jovana Maksimovic, Belinda Phipson and Alicia Oshlack. We skip over some details that are included in the workflow, and add in some details not included in the workflow. *As we've seen with other analysis types in this course (e.g. RNA-seq), there are several sensible options for analyzing DNA microarray data*. 
+
+## Learning objectives
+
+By the end of this tutorial, you should be able to  
+- Identify the basic steps in a methylation array analysis pipeline  
+- Appreciate the role of normalization prior to analysis in methylation datasets  
+- Explain the difference between beta and M-values, and which are appropriate for various steps of the anlaysis  
+- Undertake exploratory visual analysis of methylation data (plotting Beta value densities, PCA plots, sample correlation plots)  
+- Undertake differential methylation analysis of **probes and regions** and annotate probes with genomic information (chromosome, position, CpG island status, nearest gene, etc) for interpretation  
+- Plot results from differential analysis (differentially methylated probes and regions) to highlight areas under regulatory influence 
+
+## Setup - install and load packages
+
+First we load necessary packages into our session. If any of these packages are not already installed on your system, you'll first need to install them with `BiocManager::install()`. You likely don't already have the Bioconductor Workflow package (`methylationArrayAnalysis`) or `DMRcatedata` pre-installed, so we've included those commands in the following chunk. The first package includes the dataset we'll work with, so it involves a sizeable download (on the order of hundreds of MB) and may take several minutes depending on your connection. We'll also make heavy use of the `minfi`, `limma`, and `DMRcate` Bioconductor packages, which are automatically loaded by the workflow package.
+
+First install `methylationArrayAnalysis` and `DMRcatedata` by running this command in your console (only need to run it once, not every time you knit, so chunk is set to `eval = FALSE`).
+
+```{r, eval = FALSE}
+BiocManager::install("methylationArrayAnalysis")
+BiocManager::install("DMRcatedata")
+```
+
+Install any other packages below before loading the libraries if you don't already have them. Note that the loading of these packages may take a couple of minutes, so be patient!
+
+```{r, message=FALSE, warning=FALSE}
+library(methylationArrayAnalysis)
+library(DMRcatedata)
+library(tidyverse)
+library(ggplot2)
+theme_set(theme_bw())
+library(ComplexHeatmap)
+library(circlize)
+```
+
+## Introduction  
+
+The Illumina Infiniumn Array is a microarray-based high throughput platform for methylation profiling on more than 450,000 pre-selected probes for CpGs across the human genome. This platform is an aggregation of the earlier Illumina HumanMethylation27 ("27K") and HumanMethylation450 ("450K") arrays. There also exists an "850K" array called the Illumina MethylationEPIC that houses more than 850,000 probes. 
+
+On these arrays, each CpG is measured by two values: a methylated intensity (M) and an unmethylated intensity (U). Methylation levels are commonly reported as either beta values (beta=M/(M+U)) or M-values (Mvalue=log2(M/U)=log2(beta/(1-beta))), which are the logit transformed beta values. A small offset is often added to the denominator of the beta value to avoid dividing by small values. Beta values are readily interpretable as a methylation percentage, and are generally preferable for visualization and effect size interpretation. M-values, on the other hand, are more appropriate for statistical testing due to their distributional properties (see [Du et al. 2010](https://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-11-587) for an excellent primer on why).
+
+## Read in 450K methylation array data
+
+A great number of these types of datasets have been made publicly available through Gene Expression Omnibus (GEO). However, they are often available most conveniently as Bioconductor objects in the form of processed datasets, e.g. beta values already computed. We would like to demonstrate the analysis steps from the raw signal intensity data (the M and U values). To avoid the hassle of downloading the raw signal intensity data and formatting it into a Bioconductor object, we'll use the data provided in the `methylationArrayAnalysis` package.
+
+In this seminar, we are going to perform differential methylation analysis on sorted T-cell types from [Zhang et al. 2013](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3798997/). This data is publicly available at GEO accession [GSE49667](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE49667), but as mentioned above, we'll save time by loading the raw data in already formatted objects. The dataset contains 10 samples: naive, rTreg, act_naive, act_rTreg, collected from 3 different individuals (M28, M29, M30). 
+
+Let's take a look at the data files we have.
+
+```{r, message = FALSE}
+# set up a path to the data directory
+dataDirectory <- system.file("extdata", package = "methylationArrayAnalysis")
+# list the files
+list.files(dataDirectory, recursive = TRUE)
+```
+
+We can see several pairs of 'Red' and 'Grn' IDAT (Intensity Data) files. These are the raw signal intensities for the read and green channels (which can be parsed to obtain the relative methylated and unmethylated signals). There are more than 10 pairs, since there are three extra samples included that we will not consider here. There is also a file called `SampleSheet.csv`, which contains sample metadata linking the IDAT files to samples. This file is formatted with one row per sample, and one column per metadata/phenotypic data variable. We will use the `read.metharray.sheet` sheet from the `minfi` package to read this info in. We'll then remove an extra sample from another dataset that is included but we'll not consider in this seminar.
+
+```{r readsamplesheet}
+targets <- read.metharray.sheet(dataDirectory, pattern="SampleSheet.csv")
+targets
+
+# only keep files from Slide ID 6264509100 (remove one extra sample from another study)
+targets <- filter(targets, Slide == "6264509100")
+```
+Next, we read the IDAT files into R using the `read.metharray.exp` function, also from the `minfi` package. This creates an `RGChannelSet` object that contains all the raw intensity data, from both the red and green colour channels, for each sample. Note that it takes in our targets data frame as an argument - the function will look in the `Basename` column for the filenames of the idat files to grab. 
+
+```{r readin, warning = FALSE}
+# read in the raw data from the IDAT files
+rgSet <- read.metharray.exp(targets = targets)
+rgSet
+
+assays(rgSet)$Green[1:5, 1:5]
+```
+
+As you can see, this object looks a lot like an `ExpressionSet` object, with two assays - one for Green and one for Red channel. Indeed, it behaves in much the same way, but has several useful methylation-specific methods we can perform on it. 
+
+At this stage, it can be useful to rename the samples with more descriptive names.
+
+```{r rename}
+# give the samples descriptive names
+targets$ID <- paste(targets$Sample_Group, targets$Sample_Name, sep = ".")
+sampleNames(rgSet) <- targets$ID
+sampleNames(rgSet)
+```
+
+## Normalization
+
+To minimise the unwanted variation within and between samples, we need to **normalize** our data. Many different types of normalization have been developed for methylation arrays and it is beyond the scope of this seminar to compare and contrast all of them. Several methods are built into the `minfi` package. Although there is no single normalization method that is universally considered best, the `preprocessFunnorm` ([Fortin et al. 2014](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-014-0503-2)) function is most appropriate for datasets with **global methylation differences** such as cancer/normal or vastly different tissue types, whilst the `preprocessQuantile` function ([Touleimat and Tost 2012](https://www.futuremedicine.com/doi/full/10.2217/epi.12.21)) is more suitable for datasets where you **don't expect global differences** (e.g. for example a single tissue). For further discussion on appropriate choice of normalization, including data-driven tests for the assumptions of quantile normalization, see [Hicks and Irizarry (2015)](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-015-0679-0). 
+
+In this dataset, we are comparing different blood cell types, which we expect to be globally relatively similar. Therefore, we will apply the `preprocessQuantile` method. This function implements quantile normalization on the methylated and unmethylated signal intensities separately, and takes into account the different probe types (e.g. background probes). We specify `sex = "M"` since all samples in the dataset are male.
+
+```{r normalize}
+# normalize the data; this results in a GenomicRatioSet object
+mSetNorm <- preprocessQuantile(rgSet, sex = "M")
+mSetNorm
+```
+
+Note that after normalization, the data is housed in a `GenomicRatioSet` object. This is a much more compact representation of the data as the two colour channel information has been discarded and the M and U intensity information has been converted to M-values, together with associated genomic coordinates. We can pull out beta values with `getBeta(mSetNorm)`. 
+
+Let's plot the per-sample distributions of the raw versus normalized beta values. 
+
+```{r, fig.width = 10}
+# vizualise what the data looks like before and after normalization
+par(mfrow = c(1,2))
+densityPlot(rgSet, sampGroups = targets$Sample_Group,main="Raw", legend = FALSE)
+legend("top", legend = levels(factor(targets$Sample_Group)), 
+       text.col=brewer.pal(8,"Dark2"))
+densityPlot(getBeta(mSetNorm), sampGroups=targets$Sample_Group,
+            main="Normalized", legend=FALSE)
+legend("top", legend = levels(factor(targets$Sample_Group)), 
+       text.col=brewer.pal(8,"Dark2"))
+```
+
+As we can see, the distributions of beta values appear much more similar after normalization. 
+
+Let's also check out some PCA plots based on the top 1000 most variable genes using `plotMDS` in limma.
+
+```{r PCA, fig.width = 10}
+# MDS plots to look at largest sources of variation
+par(mfrow=c(1,2))
+pal <- brewer.pal(8,"Dark2")
+
+plotMDS(getM(mSetNorm), top = 1000, gene.selection="common", 
+        col=pal[factor(targets$Sample_Group)])
+legend("top", legend=levels(factor(targets$Sample_Group)), text.col=pal,
+       bg="white", cex=0.7)
+
+plotMDS(getM(mSetNorm), top = 1000, gene.selection="common",  
+        col=pal[factor(targets$Sample_Source)])
+legend("top", legend=levels(factor(targets$Sample_Source)), text.col=pal,
+       bg="white", cex=0.7)
+```
+
+Notice that PCs 1 and 2 largely separate samples by donor/individual. Let's look at higher dimensions.
+
+```{r, fig.width = 10}
+# Examine higher dimensions to look at other sources of variation
+par(mfrow=c(1,2))
+plotMDS(getM(mSetNorm), top=1000, gene.selection="common", 
+        col=pal[factor(targets$Sample_Group)], dim=c(1,3))
+legend("top", legend=levels(factor(targets$Sample_Group)), text.col=pal, 
+       cex=0.7, bg="white")
+
+plotMDS(getM(mSetNorm), top=1000, gene.selection="common", 
+        col=pal[factor(targets$Sample_Group)], dim=c(2,3))
+legend("topleft", legend=levels(factor(targets$Sample_Group)), text.col=pal,
+       cex=0.7, bg="white")
+```
+
+PC 3 seems to capture the cell type differences.
+
+Let's also look at a sample-sample correlation plot based on the top 1000 most variable probes.
+
+```{r, fig.height=7}
+top1000 <- which(rank(-rowVars(getM(mSetNorm))) <= 1000)
+cc <- as.matrix(cor(getM(mSetNorm[top1000,]), 
+                     use = "pairwise.complete.obs"), 
+                     row.names = colnames(mSetNorm))
+
+annot <- HeatmapAnnotation(df = data.frame(Individual = colData(mSetNorm)$Sample_Source,
+                                           CellType = colData(mSetNorm)$Sample_Group),
+                           col = list(Group = c("M28" =  pal[8], "M29" = pal[7], "M30" = pal[6]),
+                                      CellType = c("naive" = pal[1], "rTreg" = pal[2], 
+                                                   "act_naive" = pal[3], "act_rTreg" = pal[4])))
+
+bcols <- colorRamp2(c(0, 1), c("red", "white"))
+
+Heatmap(cc, name = "Corr", col = bcols,
+        column_title = "Correlation of M values",
+        cluster_rows = TRUE, cluster_columns = TRUE, 
+        top_annotation = annot, 
+        row_names_gp = gpar(fontsize = 8), 
+        column_names_gp = gpar(fontsize = 8))
+```
+
+Samples cluster strongly by donor/individual.
+
+## Quality Control (Filtering)
+
+First, let's remove poor quality probes. We define poor quality probes as those which have a total signal (M+U) that is similar to the background signal. We evaluate this by calculating 'detection p-values' for each probe that test whether the total signal is greater than the background signal. If there are any samples with low mean detection p-values, they should be removed. We will also remove probes with p-values larger than 0.01 in at least one sample (since small p-values indicate reliable signal). We can calculate these detection p-values with the `detectionP` function in `minfi`.
+
+```{r}
+# calculate the detection p-values
+detP <- detectionP(rgSet)
+head(detP)
+
+# flag probes with pvals > 0.01 in any sample
+keep <- rowSums(detP < 0.01) == ncol(mSetNorm) 
+table(keep)
+
+# remove poor quality probes from GenomicRatioSet
+mSetNormFilt <- mSetNorm[keep,]
+mSetNormFilt
+```
+
+It is also advisable to consider removing **probes on sex chromosomes** (if they are not of interest in your study), **probes that may interact with known SNPs** (they may inflate inter-individual variation), and/or **probes that map to multiple places in the genome**. Here, we'll remove probes that may interact with known SNPs with the convenient `minfi` function `dropLociWithSnps` - for more info on other types of filtering, see the [Bioconductor workflow on which this seminar is based](https://bioconductor.org/packages/devel/workflows/vignettes/methylationArrayAnalysis/inst/doc/methylationArrayAnalysis.html).
+
+```{r}
+mSetNormFilt <- dropLociWithSnps(mSetNormFilt)
+mSetNormFilt
+```
+
+Let's recheck the PCA plots.
+
+```{r PCA2, fig.width = 10}
+# MDS plots to look at largest sources of variation
+par(mfrow=c(1,2))
+pal <- brewer.pal(8,"Dark2")
+
+plotMDS(getM(mSetNormFilt), top = 1000, gene.selection="common", 
+        col=pal[factor(targets$Sample_Group)])
+legend("topright", legend=levels(factor(targets$Sample_Group)), text.col=pal,
+       bg="white", cex=0.7)
+
+plotMDS(getM(mSetNormFilt), top = 1000, gene.selection="common",  
+        col=pal[factor(targets$Sample_Source)])
+legend("topright", legend=levels(factor(targets$Sample_Source)), text.col=pal,
+       bg="white", cex=0.7)
+```
+
+Great! After filtering poor quality probes and probes near SNPs, we see that PC1 and PC2 are not as strongly associated with individual variation (especially PC2).
+
+
+Let's recheck the sample-sample correlation plot.
+
+```{r, fig.height = 7}
+top1000 <- which(rank(-rowVars(getM(mSetNormFilt))) <= 1000)
+cc <- as.matrix(cor(getM(mSetNormFilt[top1000,]), 
+                     use = "pairwise.complete.obs"), 
+                     row.names = colnames(mSetNorm))
+
+Heatmap(cc, name = "Corr", col = bcols,
+        column_title = "Correlation of M values",
+        cluster_rows = TRUE, cluster_columns = TRUE, 
+        top_annotation = annot, 
+        row_names_gp = gpar(fontsize = 8), 
+        column_names_gp = gpar(fontsize = 8))
+```
+
+Samples still cluster by individual/donor, but the correlation patterns are not nearly as striking as before filtering.
+
+## Probe-level differential methylation analysis
+
+We are interested in pairwise comparisons between the four cell types, taking into account individual to individual variation. We perform this analysis on the matrix of M-values in `limma`, obtaining moderated t-statistics and associated p-values for each CpG site (this part will be very familiar to you!). We'll use a design matrix with no intercept term (recall the **cell means parameterization**).
+
+A convenient way to set up the model when the user has many comparisons of interest that they would like to test is to use a **contrast matrix** in conjunction with the design matrix. A contrast matrix will take linear combinations of the columns of the design matrix corresponding to the comparisons of interest. Here we'll construct a contrast matrix of the 4 pairwise comparisons we are interested in.
+
+```{r}
+# use the above to create a design matrix (cell means parameterization)
+design <- model.matrix(~ 0 + Sample_Group + Sample_Source, 
+                       data = targets)
+# simplify column names of design matrix
+colnames(design) <- gsub("Sample_Group|Sample_Source", "", colnames(design))
+design
+ 
+# fit the linear model 
+fit <- lmFit(getM(mSetNormFilt), design)
+
+# create a contrast matrix for specific comparisons
+contMatrix <- makeContrasts(naive - rTreg,
+                            naive - act_naive,
+                            rTreg - act_rTreg,
+                            act_naive - act_rTreg,
+                            levels = design)
+contMatrix
+
+
+# fit the contrasts
+fit2 <- contrasts.fit(fit, contMatrix)
+fit2 <- eBayes(fit2)
+
+# look at the numbers of DM CpGs at FDR < 0.05
+summary(decideTests(fit2))
+```
+
+Now, we'll show how to annotate the significant probes for genomic context. We use the `IlluminaHumanMethylation450kmanifest` which contains all of the annotation information for each of the CpG probes on the 450k array. This information can be combined with the `topTable` output. Here, we'll demonstrate this for the first contrast (naive vs rTreg).
+
+```{r}
+# read in annotation and keep only particularly relevant columns (we've preselected some)
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)[,c(1:4,18:19,24:30)]
+head(ann450k)
+
+# overall Island annotation across all significant 
+table(ann450k$Relation_to_Island) / nrow(ann450k)
+
+# get the table of results for the first contrast (naive - rTreg)
+ann450kSub <- ann450k[match(rownames(mSetNormFilt), ann450k$Name), ]
+DMPs <- topTable(fit2, n = Inf, p.value = 0.05, coef = "naive - rTreg", genelist = ann450kSub)
+head(DMPs)
+
+# Look at Island annotation across all significant 
+table(DMPs$Relation_to_Island) / nrow(DMPs)
+```
+
+Now we'll plot the top 5 differentially methylated probes.
+
+```{r stripplot, warning=F, message=F, eval=T, echo = T, fig.width = 12}
+top5 <- getBeta(mSetNormFilt)[rownames(DMPs[1:5,]),] %>%
+  data.frame() %>%
+  rownames_to_column(var = "probe") %>%
+  pivot_longer(cols = -probe, names_to = c("Sample"), values_to = "Beta") %>%
+  left_join(colData(mSetNormFilt) %>% data.frame() %>% rownames_to_column(var = "Sample"), 
+            by = "Sample") 
+
+top5 %>%
+   ggplot(aes(x = Sample_Group, y = Beta, color = Sample_Group)) + 
+   geom_point(position = position_jitter(width = 0.05), na.rm = T) + 
+   facet_grid(. ~ probe) + 
+   ggtitle("Probe beta values within top 5 DM (naive-rTreg) probes") + 
+   xlab("Sample Type") + 
+   ylab("Beta") +
+   theme(axis.text.x = element_text(angle = 90))
+```
+
+All of these show a clear difference between naive and rTreg.
+
+Finally, plot location of differentially methylated probes along each chromosome.   
+
+```{r coord, warning=F, message=F}
+# fetch chromosome length info
+chrlen = getChromInfoFromUCSC("hg19") %>%
+  rename(chr = chrom) %>%
+  filter(chr %in% c("chrX", "chrY", paste("chr",1:22,sep=""))) %>%
+  mutate(chr = factor(chr, levels = c(paste("chr",1:22,sep=""), "chrX", "chrY")))
+
+DMPs %>%
+  ggplot() +
+    geom_linerange(aes(x = chr, ymin = 0, ymax = size), data = chrlen, alpha = 0.5) + 
+    geom_point(aes(x = chr, y = pos), alpha = 0.5,
+              position = position_jitter(width = 0.03), na.rm = TRUE) + 
+    ggtitle("DMP (naive-rTreg) positions along the genome") + 
+    ylab("Position of DMPs") +
+    xlab("chr") +
+    coord_flip() 
+```
+
+
+## Region level differential methylation analysis
+
+Although performing a probe-wise analysis is useful and informative, sometimes we are interested in knowing whether several neighboring CpGs are concordantly differentially methylated. In other words, we want to identify **differentially methylated regions** (DMRs). There are several Bioconductor packages that have functions for identifying differentially methylated regions from 450k data, including `bumphunter` and `DMRcate`. Here, we will demonstrate an analysis using the `DMRcate`. As it is based on limma, we can directly use the design and contrast matrices we previously defined.
+
+First, our matrix of M-values is annotated with the relevant information about the probes such as their genomic position, gene annotation, etc. By default, this is done using the `ilmn12.hg19` annotation, but this can be modified. The limma pipeline is then used for differential methylation analysis to calculate moderated t-statistics.
+
+```{r dmrcate}
+myAnnotation <- cpg.annotate(object = getM(mSetNormFilt), datatype = "array", what = "M", 
+                             analysis.type = "differential", design = design, 
+                             contrasts = TRUE, cont.matrix = contMatrix, 
+                             coef = "naive - rTreg", arraytype = "450K")
+
+myAnnotation
+```
+
+Now that we have the relevant statistics for the individual CpGs, we can then use the `dmrcate` function to combine them to identify DMRs. The parameter `lambda` here represents a smoothing bandwidth (in basepairs). Here we use the default value of 1000. `C` is a related parameter that is recommended to be set to 2.
+
+We then need to run `extractRanges` to pull out a `GRanges` object with our results.
+
+```{r}
+# run DMRcate
+DMRs <- dmrcate(myAnnotation, lambda = 1000, C = 2)
+DMRs
+
+# pull out results
+results.ranges <- extractRanges(DMRs, genome = "hg19")
+results.ranges
+```
+
+Let's visualize the results for DMR number 8 (which I selected because it has a relatively high number of CpGs (14), and a relatively high mean beta difference). The `DMR.plot` function from `DMRcate` plots sample-level heatmaps and smoothed group means (only useful for larger numbers of CpGs) of methylation values in the context of genomic location.
+
+```{r, fig.width = 10, fig.height = 7}
+# set up the grouping variables and colours
+groups <- pal[1:length(unique(targets$Sample_Group))]
+names(groups) <- levels(factor(targets$Sample_Group))
+cols <- groups[as.character(factor(targets$Sample_Group))]
+
+# draw the plot for the top DMR
+par(mfrow=c(1,1))
+DMR.plot(ranges = results.ranges, dmr = 8, CpGs = getBeta(mSetNormFilt), phen.col = cols, 
+         what = "Beta", arraytype = "450K", genome = "hg19")
+```
+
+## Exercise
+
+There are no graded deliverables for this seminar, but as an exercise, repeat the analysis in the previous sections (plot top 5 differentially methylated probes, plot all differentially methylated probes across the genome, and obtain DMRs) for one of the other contrasts. In addition, add the name(s) of nearest genes to the plot of the top 5 differentially methylated probes.
+
+## Interpretation and functional enrichment analysis
+
+The next step in the analysis pipeline would be to interpret our result by associating these differentially methylated regions (DMRs) with biological features. DNA methylation in different genomic regions, i.e. promoter regions, enhancers, gene body etc., has different impact on gene transcription. A common practice in DMR analysis is to separate DMRs associated with different types of genomic regions and study them separately. Our key interest is to see how these DMRs affect gene expression level and consequently biological function. Gene set enrichment analyses will be explored later in the course (Seminar 10).
+
+## Methylation sequencing
+
+We've only scratched the surface of DNA methylation analysis. This seminar focused entirely on analysis of DNA methylation microarrays (in particular the 450K array). As sequencing technologies are becoming popular, techniques like Whole Genome Bisulfite Sequencing (WGBS) and Methylated DNA Immunoprecipitation followed by sequencing (MEDIP-seq) are becoming more widely used. These bring with them new analysis challenges. For an overview, refer to [this slide deck from last year](https://github.com/STAT540-UBC/STAT540-UBC.github.io/blob/master/lectures/archive/lectures_2020/lect17_Methylation.pdf).
+
+## Session info
+
+```{r}
+sessionInfo()
+```
