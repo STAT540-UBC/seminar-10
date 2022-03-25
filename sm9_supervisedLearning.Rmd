@@ -1,18 +1,17 @@
 ---
-output:
+title: 'STAT540 - Seminar 9: Supervised learning, classification, cross validation, variable selection'
+output: 
   github_document
 ---
 
-# STAT540 - Seminar 9: Supervised learning, classification, cross validation, variable selection
-
-## Acknowledgements
+## Attributions
 
 Contributors: Gabriela Cohen Freue, W. Evan Durno, Jasleen Grewal, and Keegan Korthauer 
 
 ## Learning objectives   
 By the end of this tutorial, you should be able to    
 - Filter gene expression data to remove uninformative features.  
-- Further subselect a set of variables using a fixed information criteria, and know when it may not be required/possible to do so.  
+- Further subset variables using a fixed information criteria, and know when it may not be required/possible to do so.  
 - Understand the concept of held-out test set, training set, and validation set.  
 - Select a suitable classifier (based on size of training dataset) and train a model with the input training data.   
 - Get predicted labels for a validation set, from the trained classifier model.  
@@ -23,7 +22,7 @@ By the end of this tutorial, you should be able to
   - Recognize why we can't go back and reselect models after assessment on the held out test set.  
 - Be able to distinguish between the following scenarios for using supervised machine learning, and enumerate metrics for assessing performance in each case:  
   - 2 class classification problem  
-  - Multi-clas classification problem  
+  - Multi-class classification problem  
 - Be able to define accuracy, precision, sensitivity, specificity, F1-score, Kappa score.  
 - Replicate analysis in either MLInterface, GLMnet, CMA, or Caret (take home exercise, optional).   
 
@@ -93,7 +92,7 @@ dat
 
 Now we'll do some data wrangling to pull out the metadata variables we are interested in, and recode some of them.
 
-```{r}
+```{r wrangle}
 str(pData(dat), max.level = 0)
 
 # extract only those variables of interest 
@@ -114,7 +113,7 @@ str(pData(dat))
 
 Great! Next, let's split the `ExpressionSet` object into two different parts - one for the training and one for the test set.
 
-```{r}
+```{r split}
 # split the ExpressionSet into training and test sets. 
 table(pData(dat)$Set)
 train.es <- dat[, dat$Set == "training"]
@@ -123,7 +122,7 @@ test.es <- dat[ , dat$Set == "test"]
 
 Now, we can do some exploratory analysis of the data before trying some classification methods.
 
-```{r}
+```{r eda}
 # understand your data for classification
 table(pData(train.es)$LnStatus)
 table(pData(test.es)$LnStatus)
@@ -164,7 +163,7 @@ The prediction of a discrete response is usually refer to as *classification*. A
 
 We should check to ensure there are no missing values in our data.  
 
-```{r}
+```{r missing}
 sum(is.na(exprs(train.es)))
 sum(is.na(exprs(test.es)))
 ```
@@ -195,7 +194,7 @@ In this seminar, we are working with a dataset that has both a training and a te
 
 This is not the only way to create splits of the training data to run a cross-validation. Note that if the samples can not be evenly divided into the nfolds you specified, then you need to complete the matrices below with NAs and call for entries different from NA at those folds.
 
-```{r}
+```{r cvsplit}
 nfold <- 6
 splitData <- function(train.es, nfold, seed = NA){
   tabTrain <- table(train.es$LnStatus)
@@ -227,8 +226,7 @@ To illustrate how to select a model, I will use the top-50 genes selected by `li
 
 In this example, I will compare 7 different models: KNN for k={1,5,10,15}, LDA, Logit, SVM. Feel free to add other methods to the list!
 
-```{r}
-
+```{r compare}
 #Define here the constants that you will not evaluate. For example, I will use the top-50 limma genes
 set.seed(495)
 ngenes <- 50
@@ -325,7 +323,7 @@ pr.err <- matrix(-1, nfold,nmethod, dimnames=list(paste0("Fold",1:nfold),c("1NN"
 ### Error Rates
 Now you can get the average prediction error for all methods. Note that the prediction errors are high! not too much hope for the real test run!
 
-```{r}
+```{r err}
 cv.err <- colMeans(pr.err)
 
 # mean - 1 sd (sd of the 6 error rates)
@@ -356,10 +354,13 @@ box()
 ### Results of the CV
 According to these results, LDA and 10NN may be the better classifier to try in the test data. However, remember that this CV results depend on the first split of the data we did. Thus, we need to repeat this CV
 
-**Exercise 1**: perform 100 runs of this CV before selecting a model to test! We can do this by running different random splits using the `splitData` function we created without a seed, and selecting the best average error across each run of CV. Add at least one rule to select data for use in the underlying models, such as a P value threshold for genes selected in limma rather than just the top 50 genes by P value, or a different cost for the SVM model.
+**Exercise 1** (not marked): perform 100 runs of this CV before selecting a model to test! We can do this by running different random splits using the `splitData` function we created without a seed, and selecting the best average error across each run of CV. Add at least one rule to select data for use in the underlying models, such as a P value threshold for genes selected in limma rather than just the top 50 genes by P value, or a different cost for the SVM model.
+```{r ex1}
+# your code here
+```
 
-**Exercise 2**: Use AUC as a criteria to select a model based on the training data! Tip: extract the predicted probabilities from each method and use the calculateAUC function defined below:
-```{r}
+**Exercise 2** (not marked): Use AUC as a criteria to select a model based on the training data! Tip: extract the predicted probabilities from each method and use the calculateAUC function defined below:
+```{r ex2}
 require(ROCR)
 calculateAUC <- function(predictions,labels){
   tmp_predictions <- ROCR::prediction(
@@ -372,6 +373,8 @@ calculateAUC <- function(predictions,labels){
 
 # Example: Calculate the AUC for our SVM predictions
 calculateAUC(pr.svm,testclass.fold)
+
+# your code here
 ```
 
 
@@ -381,7 +384,7 @@ If you have never heard of AUC, please work through the rest of this seminar, an
 
 Now that we decided on which method we are going to use to classify samples in the test set, we need to train the model using the *FULL* training set and then classify samples of the test set. I will use the 10NN model.
 
-```{r}
+```{r test}
 yhat.knn <- knn(train=t(exprs(train.es)), test=t(exprs(test.es)), cl=train.es$LnStatus,
                      k = 10)
 #Store the prediction error for each kk within this fold
@@ -398,7 +401,7 @@ However, in this seminar, I encourage you to try different options **as an exerc
 ## CMA
 Many steps of the CV defined above can be easily done with CMA. For example, Step 1 in the loop above can also be done using 'CMA' with the function 'GeneSelection', which selects the most informative features (e.g., gene) to build a classifier within each of the splits generated by 'GenerateLearningsets'. Some learning algorithms do better if you only give them "useful" features. 
 
-```{r}
+```{r cma}
 featureScores<-GeneSelection(X=t(exprs(train.es)), y=train.es$LnStatus, learningsets=splits, method="limma")
 
 #Compare list of selected genes using:
@@ -423,7 +426,7 @@ Similarly, you can use CMA to train and test a classifier within each CV fold (l
 
 Paul solved this problem in the following way: he made a `learningsets` object that has just one "split" defined by the samples in the training set. 
 
-```{r}
+```{r byhand}
 m<-matrix(which(dat$Set == "training"), 1)
 
 full.learningset<-new("learningsets", learnmatrix=m, method="my own", ntrain=96, iter=1)
@@ -453,7 +456,7 @@ library(mlbench)
 
 We will be using the Soybean dataset, where our prediction is for the different problems associated with soybean crops. Our dataset has 683 samples, and 35 features being measured for each sample.  
 Our categories are 19.  
-```{r}
+```{r loaddata}
 cv_folds <- trainControl(method="cv", number=5)
 data(Soybean)
 unique(Soybean$Class)
@@ -461,7 +464,7 @@ summary(Soybean)
 ```
 
 Let us pre-process our data.  
-```{r}
+```{r preprocess}
 #Remove rows (samples) with missing values  
 soybean_x = Soybean[rowSums(is.na(Soybean)) == 0,]
 #Then remove columns (features) with missing values  
@@ -471,7 +474,7 @@ dim(soybean_x)
 
 We are left with 562 samples and 35 attributes. The first column, `Class`, describes the categories. We will refactor this column since we have removed certain columns (and possibly some of the 19 classes)  
 
-```{r}
+```{r refactor}
 soybean_x$Class = (as.factor(as.character(soybean_x$Class)))
 unique(soybean_x$Class)
 ```
@@ -480,7 +483,7 @@ Now we have 15 classes!
 In this instance, we don't have an external test set for evaluation, so we will be assessing the performance on a held-out test set. First, we create the held-out test set.  
 *Note* that we are holding out this test set from our training data, and then performing data-splitting for validation within our training subset. In practise, like we did earlier, you would want to loop this multiple times with holding out a test set and training on the remainder dataset (using cross validation or bootstrapping to estimate your model accuracy on the test set).  
 
-```{r}
+```{r holdout}
 trainIndex <- createDataPartition(soybean_x$Class, p = .8,  list = FALSE,  times = 1)
 soyTrain <- soybean_x[ trainIndex,]
 soyTest  <- soybean_x[-trainIndex,]
@@ -489,7 +492,7 @@ soyTest  <- soybean_x[-trainIndex,]
 **Cross validation results**  
 We set up our cross-validation folds. Note we can also choose the option 'cv' or 'LOOCV' instead of 'repeatedcv'.    
 With 'repeatedcv', we don't have to manually set up the multiple loops we did when we were using CMA.  
-```{r, message= FALSE,warning=FALSE}
+```{r cvresults, message= FALSE,warning=FALSE}
 #Prepare resampling method for Cross-Validation folds  
 set.seed(7)
 cv_control = trainControl(method="repeatedcv", number=5, repeats=10, classProbs=FALSE) #summaryFunction=mnLogLoss)
@@ -501,17 +504,20 @@ y_pred_cv = predict(modelSvm_cv, soyTest[,-1])
 ```
 
 
-We can also use bootstrap re-sampling instead of cross-validation folds. This means we take random samples from the dataset (with re-selection), against which to evaluate our model. This gives us an idea about hte variance of the model itself.  
+We can also use bootstrap re-sampling instead of cross-validation folds. This means we take random samples from the dataset (with re-selection), against which to evaluate our model. This gives us an idea about the variance of the model itself.  
 
 Bootstrapping is different from cross validation in that the latter splits the entire dataset into folds *without re-selection*.It is a robust method to estimate the accuracy of our model.  
 
 **Bootstrapped results**  
-```{r message=FALSE,warning=FALSE}
-#Prepare resamling method for Bootstrapping
+
+This part will take some time.
+```{r bootstrap, message=FALSE,warning=FALSE}
+#Prepare resampling method for Bootstrapping
 
 set.seed(7)
-cv_control = trainControl(method="boot", number=100, classProbs=FALSE) 
-modelSvm_boot <- train(Class~., data=soyTrain, method="svmRadial", metric="Accuracy", trControl=cv_control, trace=FALSE)
+cv_boot = trainControl(method="boot", number=20, classProbs=FALSE) 
+modelSvm_boot <- train(Class~., data=soyTrain, method="svmRadial",
+                       metric="Accuracy", trControl=cv_boot, trace=FALSE)
 # display results
 print(modelSvm_boot)
 
@@ -521,22 +527,21 @@ y_pred_boot = predict(modelSvm_boot, soyTest[,-1])
 **Fitting other models**
 
 This part will take a while.
-We can consider other algorithmic approaches for classifiers too, as follows: 
-```{r, message=FALSE,warning=FALSE}
-# trace = TRUE or vocal = TRUE silences these functions depending on the method. it's stupid but blame the train function
+You can consider other algorithmic approaches for classifiers too, as follows: 
+```{r othermodels, message=FALSE,warning=FALSE}
+# trace = FALSE or vocal = FALSE silences these functions depending on the method. it's stupid but blame the train function
 
-# train the GLM model
-set.seed(7)
-modelNN <- train(Class~., data=soyTrain, method="nnet", metric="Accuracy", trControl=cv_control, trace=FALSE)
 # train the GBM model
 set.seed(7)
-modelGbm <- train(Class~., data=soyTrain, method="gbm", metric="Accuracy", trControl=cv_control, verbose = FALSE, preProcess = "zv")
+modelGbm <- train(Class~., data=soyTrain, method="gbm", metric="Accuracy",
+                  trControl=cv_boot, verbose = FALSE, preProcess = "zv")
 # train the SVM model
 set.seed(7)
-modelSvm <- train(Class~., data=soyTrain, method="svmRadial", metric="Accuracy", trControl=cv_control, trace=FALSE)
+modelSvm <- train(Class~., data=soyTrain, method="svmRadial",
+                  metric="Accuracy", trControl=cv_boot, trace=FALSE)
 
 # collect resamples
-results <- resamples(list(NN=modelNN, GBM=modelGbm, SVM=modelSvm))
+results <- resamples(list(GBM=modelGbm, SVM=modelSvm))
 # summarize the distributions
 summary(results)
 # boxplots of results
@@ -556,7 +561,7 @@ Overall accuracy is a misleading statistic in case of unbalanced datasets. The k
 Receiver-Operator Characteristic (ROC) Curves can be used to characterize the performance of our model in a binary classification setting.  
 For binary classification, we might also be interested in precision and recall, i.e. a metric of our True Positive and True Negative rates.   
 
-```{r}
+```{r definemetrics}
 binary_preds = as.integer(y_pred_cv)-1
 binary_true = as.integer(soyTest$Class)-1
 precision <- sum(binary_preds & binary_true) / sum(binary_preds)
@@ -565,7 +570,7 @@ recall <- sum(binary_preds & binary_true) / sum(binary_true)
 
 Precision tells us how often, when we predict a class 'y', do we get it correct.  
 Recall tells us how often, out of all our 'y' instances, do we predict them correctly.  
-```{r}
+```{r showmetrics}
 #Precision    
 print(precision)
 #Recall  
@@ -573,7 +578,7 @@ print(recall)
 ```
 
 In case of multi-class classification, another metric that comes in handy is the F1-score. This is the harmonic mean of precision and recall. A high F1-score will tell you that you are quite precise and sensitive in your prediction of *all* classes.  
-```{r}
+```{r f1}
 Fmeasure <- 2 * precision * recall / (precision + recall)
 Fmeasure
 ```
@@ -584,13 +589,6 @@ Fmeasure
 ## Discussion points
 
 How good do you think a classifier will have to be to be clinically relevant? What level of specificity or sensitivity do you think is "good enough"? The author's data set has half lymph-node positive and half negative. The incidence of lymph-node-positive breast cancer is about 33% at the time of diagnosis (according to [http://seer.cancer.gov/statfacts/html/breast.html]). How does that affect your opinion about the classifier?
-
-### Take-home exercises (Restated from above)
-Recall our 6-fold cross validation on the binary dataset.
-
-**Exercise 1**: perform 100 runs of this CV before selecting a model to test! Add at least one model to the list of models, e.g., use genes with a p-val threshold < cutoff.  
-
-**Exercise 2**: Use AUC as a criteria to select a model based on the training data! Tip: extract the predicted probabilities from each method and use the `roc` function in `CMA`.   
 
 # References
 
