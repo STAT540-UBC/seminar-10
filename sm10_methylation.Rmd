@@ -1,11 +1,10 @@
 ---
-output:
+title: 'STAT540 - Seminar 10: DNA methylation analysis with Illumina Infinium DNA microarrays'
+output: 
   github_document
 ---
 
-# STAT 540 - Seminar 10: DNA methylation analysis with Illumina's Infinium DNA microarrays  
-
-## Acknowledgements
+## Attributions
 
 This seminar was developed by Keegan Korthauer, and is modeled after the Bioconductor Workflow ["**A cross-package Bioconductor workflow for analysing methylation array data**"](https://bioconductor.org/packages/devel/workflows/vignettes/methylationArrayAnalysis/inst/doc/methylationArrayAnalysis.html) by Jovana Maksimovic, Belinda Phipson and Alicia Oshlack. We skip over some details that are included in the workflow, and add in some details not included in the workflow. *As we've seen with other analysis types in this course (e.g. RNA-seq), there are several sensible options for analyzing DNA microarray data*. 
 
