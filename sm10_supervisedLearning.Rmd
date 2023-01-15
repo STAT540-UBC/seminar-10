@@ -1,5 +1,5 @@
 ---
-title: 'STAT540 - Seminar 9: Supervised learning, classification, cross validation, variable selection'
+title: 'STAT540 - Seminar 10: Supervised learning, classification, cross validation, variable selection'
 output: 
   github_document
 ---

@@ -1,4 +1,4 @@
-STAT540 - Seminar 9: Supervised learning, classification, cross
+STAT540 - Seminar 10: Supervised learning, classification, cross
 validation, variable selection
 ================
 
