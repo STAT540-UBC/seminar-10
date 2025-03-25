@@ -162,7 +162,7 @@ dat
     ## protocolData: none
     ## phenoData
     ##   sampleNames: GSM570498 GSM570499 ... GSM570613 (116 total)
-    ##   varLabels: title geo_accession ... patient type:ch1 (50 total)
+    ##   varLabels: title geo_accession ... patient type:ch1 (49 total)
     ##   varMetadata: labelDescription
     ## featureData
     ##   featureNames: 1007_s_at 1053_at ... 91952_at (24236 total)
@@ -179,7 +179,7 @@ are interested in, and recode some of them.
 str(pData(dat), max.level = 0)
 ```
 
-    ## 'data.frame':    116 obs. of  50 variables:
+    ## 'data.frame':    116 obs. of  49 variables:
 
 ``` r
 # extract only those variables of interest 
@@ -293,7 +293,7 @@ toLonger(dat[rangenes,]) %>%
     geom_jitter(width = 0.2, alpha = 0.5)
 ```
 
-![](sm9_supervisedLearning_files/figure-gfm/eda-1.png)<!-- -->
+![](sm10_supervisedLearning_files/figure-gfm/eda-1.png)<!-- -->
 
 # Classification
 
@@ -353,11 +353,11 @@ available and many constants within methods need to be selected in these
 steps. Thus, *cross-validation* is usually required to *evaluate* how
 well different trained models work and select the *best* model to
 proceed. Note that although you may only want to select among different
-choices available in Step 2, the cross-validation needs to start in Step
-1. Why? The results of the cross-validation will be over-optimistic and
-biased if the samples in the test sets of the cross-validation (i.e.,
-left-out folds) were used to *select* the most promising features in
-Step 1!! For example, if the performance of a complex model is
+choices available in Step 2, the cross-validation needs to start in
+Step 1. Why? The results of the cross-validation will be over-optimistic
+and biased if the samples in the test sets of the cross-validation
+(i.e., left-out folds) were used to *select* the most promising features
+in Step 1!! For example, if the performance of a complex model is
 (artificially) good, you may not penalize regression coefficients enough
 in Step 2, and may yield to a poor performance in Step 3.
 
@@ -551,7 +551,7 @@ axis(1, 1:nmethod, colnames(pr.err))
 box()
 ```
 
-![](sm9_supervisedLearning_files/figure-gfm/err-1.png)<!-- -->
+![](sm10_supervisedLearning_files/figure-gfm/err-1.png)<!-- -->
 
 ### Results of the CV
 
@@ -559,21 +559,21 @@ According to these results, LDA and 10NN may be the better classifier to
 try in the test data. However, remember that this CV results depend on
 the first split of the data we did. Thus, we need to repeat this CV
 
-**Exercise 1** (not marked): perform 100 runs of this CV before
-selecting a model to test! We can do this by running different random
-splits using the `splitData` function we created without a seed, and
-selecting the best average error across each run of CV. Add at least one
-rule to select data for use in the underlying models, such as a P value
-threshold for genes selected in limma rather than just the top 50 genes
-by P value, or a different cost for the SVM model.
+**Exercise 1**: perform 100 runs of this CV before selecting a model to
+test! We can do this by running different random splits using the
+`splitData` function we created without a seed, and selecting the best
+average error across each run of CV. Add at least one rule to select
+data for use in the underlying models, such as a P value threshold for
+genes selected in limma rather than just the top 50 genes by P value, or
+a different cost for the SVM model.
 
 ``` r
 # your code here
 ```
 
-**Exercise 2** (not marked): Use AUC as a criteria to select a model
-based on the training data! Tip: extract the predicted probabilities
-from each method and use the calculateAUC function defined below:
+**Exercise 2**: Use AUC as a criteria to select a model based on the
+training data! Tip: extract the predicted probabilities from each method
+and use the calculateAUC function defined below:
 
 ``` r
 require(ROCR)
@@ -807,7 +807,7 @@ ftable(tres)
 roc(tres)
 ```
 
-![](sm9_supervisedLearning_files/figure-gfm/byhand-1.png)<!-- -->
+![](sm10_supervisedLearning_files/figure-gfm/byhand-1.png)<!-- -->
 
 Note: his optimized classifier did terribly as well.
 
@@ -823,6 +823,8 @@ on a multi-class problem.
 library(caret)
 library(mlbench)
 ```
+
+    ## Warning: package 'mlbench' was built under R version 4.4.3
 
 We will be using the Soybean dataset, where our prediction is for the
 different problems associated with soybean crops. Our dataset has 683
@@ -1065,12 +1067,12 @@ summary(results)
     ## 
     ## Accuracy 
     ##          Min.   1st Qu.    Median      Mean   3rd Qu.      Max. NA's
-    ## GBM 0.8544304 0.8829909 0.8957016 0.8955062 0.9142414 0.9512195    0
+    ## GBM 0.8544304 0.8819049 0.8929854 0.8951865 0.9134987 0.9512195    0
     ## SVM 0.8711656 0.8876165 0.8960235 0.9005277 0.9125946 0.9393939    0
     ## 
     ## Kappa 
     ##          Min.   1st Qu.    Median      Mean   3rd Qu.      Max. NA's
-    ## GBM 0.8373613 0.8676825 0.8819169 0.8822562 0.9031518 0.9450126    0
+    ## GBM 0.8373613 0.8667342 0.8810342 0.8818997 0.9023763 0.9450126    0
     ## SVM 0.8549330 0.8716083 0.8827638 0.8878170 0.9021221 0.9331632    0
 
 ``` r
@@ -1078,7 +1080,7 @@ summary(results)
 bwplot(results)
 ```
 
-![](sm9_supervisedLearning_files/figure-gfm/othermodels-1.png)<!-- -->
+![](sm10_supervisedLearning_files/figure-gfm/othermodels-1.png)<!-- -->
 
 > You can finetune the parameters for different models in Caret using
 > tuneGrid.

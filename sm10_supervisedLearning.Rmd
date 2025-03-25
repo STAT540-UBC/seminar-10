@@ -354,12 +354,12 @@ box()
 ### Results of the CV
 According to these results, LDA and 10NN may be the better classifier to try in the test data. However, remember that this CV results depend on the first split of the data we did. Thus, we need to repeat this CV
 
-**Exercise 1** (not marked): perform 100 runs of this CV before selecting a model to test! We can do this by running different random splits using the `splitData` function we created without a seed, and selecting the best average error across each run of CV. Add at least one rule to select data for use in the underlying models, such as a P value threshold for genes selected in limma rather than just the top 50 genes by P value, or a different cost for the SVM model.
+**Exercise 1**: perform 100 runs of this CV before selecting a model to test! We can do this by running different random splits using the `splitData` function we created without a seed, and selecting the best average error across each run of CV. Add at least one rule to select data for use in the underlying models, such as a P value threshold for genes selected in limma rather than just the top 50 genes by P value, or a different cost for the SVM model.
 ```{r ex1}
 # your code here
 ```
 
-**Exercise 2** (not marked): Use AUC as a criteria to select a model based on the training data! Tip: extract the predicted probabilities from each method and use the calculateAUC function defined below:
+**Exercise 2**: Use AUC as a criteria to select a model based on the training data! Tip: extract the predicted probabilities from each method and use the calculateAUC function defined below:
 ```{r ex2}
 require(ROCR)
 calculateAUC <- function(predictions,labels){
